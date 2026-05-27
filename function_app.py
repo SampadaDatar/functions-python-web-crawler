@@ -7,8 +7,9 @@ import re
 import requests
 import traceback
 import validators
+import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlunparse
 
 from azure.identity import DefaultAzureCredential, ManagedIdentityCredential
 from azure.storage.blob import BlobServiceClient
@@ -17,6 +18,8 @@ from bs4 import BeautifulSoup
 app = func.FunctionApp(http_auth_level=func.AuthLevel.ANONYMOUS)
 
 CHUNK_SIZE = 2000  # characters per chunk, tuned for AI Search
+DEFAULT_MAX_PAGES = int(os.environ.get("CRAWL_MAX_PAGES", "100"))
+CRAWL_NESTED_SITEMAPS = os.environ.get("CRAWL_NESTED_SITEMAPS", "false").lower() == "true"
 
 
 @app.route(route="search_site", methods=["POST"])
@@ -24,6 +27,7 @@ def search_site(req: func.HttpRequest) -> func.HttpResponse:
     logging.info('Python HTTP trigger function processed a request.')
 
     url = req.params.get('url')
+    max_pages = None
     if not url:
         try:
             req_body = req.get_json()
@@ -31,10 +35,14 @@ def search_site(req: func.HttpRequest) -> func.HttpResponse:
             pass
         else:
             url = req_body.get('url')
+            max_pages = req_body.get('max_pages')
 
     if url:
         if validators.url(url):
-            result = orchestrator_function(url)
+            if _is_sitemap_candidate(url):
+                result = crawl_sitemap(url, max_pages)
+            else:
+                result = orchestrator_function(url)
             return func.HttpResponse(
                 json.dumps(result, indent=2),
                 status_code=200,
@@ -94,6 +102,114 @@ def orchestrator_function(url):
         logging.error(f"Error while crawling the site: {error}")
         logging.error(traceback.format_exc())
         return {"error": str(error)}
+
+
+def _is_sitemap_candidate(url):
+    """Check if the URL is a domain root or an explicit sitemap URL."""
+    parsed = urlparse(url)
+    path = parsed.path.rstrip("/")
+    return path == "" or path.endswith("/sitemap.xml") or path.endswith(".xml")
+
+
+def _build_sitemap_url(url):
+    """Build the sitemap URL from a domain root URL."""
+    parsed = urlparse(url)
+    if parsed.path.rstrip("/").endswith(".xml"):
+        return url
+    return urlunparse((parsed.scheme, parsed.netloc, "/sitemap.xml", "", "", ""))
+
+
+def fetch_sitemap(url):
+    """Fetch and parse a sitemap, returning a list of page URLs."""
+    sitemap_url = _build_sitemap_url(url)
+    logging.info(f"Fetching sitemap from: {sitemap_url}")
+
+    response = requests.get(sitemap_url, allow_redirects=True, timeout=15)
+    response.raise_for_status()
+
+    root = ET.fromstring(response.content)
+    # Strip XML namespace for easier tag matching
+    ns = ""
+    if root.tag.startswith("{"):
+        ns = root.tag.split("}")[0] + "}"
+
+    # Check if this is a sitemap index
+    sitemap_entries = root.findall(f"{ns}sitemap")
+    if sitemap_entries:
+        if CRAWL_NESTED_SITEMAPS:
+            logging.info(f"Sitemap index found with {len(sitemap_entries)} sub-sitemaps, following nested sitemaps.")
+            urls = []
+            for sitemap_el in sitemap_entries:
+                loc = sitemap_el.find(f"{ns}loc")
+                if loc is not None and loc.text:
+                    try:
+                        urls.extend(fetch_sitemap(loc.text.strip()))
+                    except Exception as e:
+                        logging.warning(f"Failed to fetch sub-sitemap {loc.text}: {e}")
+            return urls
+        else:
+            logging.warning(
+                f"Sitemap index found with {len(sitemap_entries)} sub-sitemaps, "
+                "but CRAWL_NESTED_SITEMAPS is disabled. Skipping nested sitemaps."
+            )
+            return []
+
+    # Standard sitemap with <url><loc> entries
+    url_entries = root.findall(f"{ns}url")
+    urls = []
+    for url_el in url_entries:
+        loc = url_el.find(f"{ns}loc")
+        if loc is not None and loc.text:
+            urls.append(loc.text.strip())
+    logging.info(f"Found {len(urls)} URLs in sitemap.")
+    return urls
+
+
+def crawl_sitemap(domain_url, max_pages=None):
+    """Crawl all pages discovered from a sitemap."""
+    if max_pages is None:
+        max_pages = DEFAULT_MAX_PAGES
+
+    try:
+        page_urls = fetch_sitemap(domain_url)
+    except requests.exceptions.HTTPError as e:
+        if e.response is not None and e.response.status_code == 404:
+            logging.info("No sitemap found, falling back to single-page crawl.")
+            return orchestrator_function(domain_url)
+        raise
+    except Exception as e:
+        logging.warning(f"Failed to fetch sitemap: {e}. Falling back to single-page crawl.")
+        return orchestrator_function(domain_url)
+
+    if not page_urls:
+        logging.info("Sitemap was empty or had no URLs. Falling back to single-page crawl.")
+        return orchestrator_function(domain_url)
+
+    total_found = len(page_urls)
+    page_urls = page_urls[:max_pages]
+
+    results = []
+    errors = []
+    for page_url in page_urls:
+        try:
+            result = orchestrator_function(page_url)
+            if "error" in result:
+                errors.append({"url": page_url, "error": result["error"]})
+            else:
+                results.append(result)
+        except Exception as e:
+            logging.error(f"Error crawling {page_url}: {e}")
+            errors.append({"url": page_url, "error": str(e)})
+
+    return {
+        "sitemap_url": _build_sitemap_url(domain_url),
+        "total_urls_found": total_found,
+        "max_pages": max_pages,
+        "pages_crawled": len(results),
+        "pages_failed": len(errors),
+        "results": results,
+        "errors": errors,
+    }
 
 
 def crawl_site(url):

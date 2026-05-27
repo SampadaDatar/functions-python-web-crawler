@@ -6,6 +6,8 @@
     "AzureWebJobsFeatureFlags": "EnableWorkerIndexing",
     "STORAGE_ACCOUNT_URL": "https://<your-storage-account-name>.blob.core.windows.net",
     "STORAGE_CONTAINER_NAME": "search-crawl-data",
-    "MANAGED_IDENTITY_CLIENT_ID": "<your-managed-identity-client-id>"
+    "MANAGED_IDENTITY_CLIENT_ID": "<your-managed-identity-client-id>",
+    "CRAWL_MAX_PAGES": "100",
+    "CRAWL_NESTED_SITEMAPS": "false"
   }
 }
