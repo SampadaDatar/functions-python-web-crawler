@@ -12,6 +12,8 @@ from datetime import datetime, timezone
 from urllib.parse import urlparse, urlunparse
 
 from azure.identity import DefaultAzureCredential, ManagedIdentityCredential
+from azure.search.documents import SearchClient
+from azure.core.credentials import AzureKeyCredential
 from azure.storage.blob import BlobServiceClient
 from bs4 import BeautifulSoup
 
@@ -65,6 +67,89 @@ def search_site(req: func.HttpRequest) -> func.HttpResponse:
             status_code=400,
             mimetype="application/json"
         )
+
+
+@app.route(route="search_indexes", methods=["POST"])
+def search_indexes(req: func.HttpRequest) -> func.HttpResponse:
+    logging.info("search_indexes function processed a request.")
+
+    # Validate environment configuration
+    search_endpoint = os.environ.get("SEARCH_ENDPOINT")
+    search_api_key = os.environ.get("SEARCH_API_KEY")
+    index_names_raw = os.environ.get("SEARCH_INDEX_NAMES")
+    semantic_config = os.environ.get("SEARCH_SEMANTIC_CONFIG", "default")
+
+    if not search_endpoint or not search_api_key or not index_names_raw:
+        return func.HttpResponse(
+            json.dumps({"error": "Missing required environment variables: SEARCH_ENDPOINT, SEARCH_API_KEY, SEARCH_INDEX_NAMES"}),
+            status_code=400,
+            mimetype="application/json"
+        )
+
+    # Parse request body
+    try:
+        req_body = req.get_json()
+    except ValueError:
+        return func.HttpResponse(
+            json.dumps({"error": "Invalid JSON body."}),
+            status_code=400,
+            mimetype="application/json"
+        )
+
+    query = req_body.get("query")
+    if not query:
+        return func.HttpResponse(
+            json.dumps({"error": "No 'query' field provided in request body."}),
+            status_code=400,
+            mimetype="application/json"
+        )
+
+    top = req_body.get("top", 5)
+    index_names = [name.strip() for name in index_names_raw.split(",") if name.strip()]
+
+    credential = AzureKeyCredential(search_api_key)
+    all_results = []
+    errors = []
+
+    for index_name in index_names:
+        try:
+            search_client = SearchClient(
+                endpoint=search_endpoint,
+                index_name=index_name,
+                credential=credential,
+            )
+            results = search_client.search(
+                search_text=query,
+                query_type="semantic",
+                semantic_configuration_name=semantic_config,
+                select=["content", "url", "title"],
+                top=top,
+            )
+            for result in results:
+                all_results.append({
+                    "content": result.get("content", ""),
+                    "source": result.get("url", ""),
+                    "title": result.get("title", ""),
+                    "index_name": index_name,
+                    "score": result.get("@search.reranker_score", result.get("@search.score", 0)),
+                })
+        except Exception as e:
+            logging.error(f"Error searching index '{index_name}': {e}")
+            errors.append({"index_name": index_name, "error": str(e)})
+
+    # Sort by score descending
+    all_results.sort(key=lambda x: x["score"], reverse=True)
+
+    return func.HttpResponse(
+        json.dumps({
+            "query": query,
+            "total_results": len(all_results),
+            "results": all_results,
+            "errors": errors,
+        }, indent=2),
+        status_code=200,
+        mimetype="application/json"
+    )
 
 
 def orchestrator_function(url):
