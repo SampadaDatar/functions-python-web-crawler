@@ -1,0 +1,140 @@
+{
+  "openapi": "3.0.1",
+  "info": {
+    "title": "Search Indexes API",
+    "description": "Searches across multiple Azure AI Search indexes and returns content with source citations.",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "https://<your-function-app-name>.azurewebsites.net",
+      "description": "Azure Functions production endpoint"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "function_key": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "x-functions-key"
+      }
+    }
+  },
+  "security": [
+    {
+      "function_key": []
+    }
+  ],
+  "paths": {
+    "/api/search_indexes": {
+      "post": {
+        "operationId": "searchIndexes",
+        "summary": "Search across Azure AI Search indexes",
+        "description": "Performs a semantic search across multiple Azure AI Search indexes and returns matching content with source URLs for citations.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["query"],
+                "properties": {
+                  "query": {
+                    "type": "string",
+                    "description": "The search query text to find relevant content across indexes."
+                  },
+                  "top": {
+                    "type": "integer",
+                    "default": 5,
+                    "description": "Maximum number of results to return per index."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Search results with content and source citations.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "query": {
+                      "type": "string",
+                      "description": "The original search query."
+                    },
+                    "total_results": {
+                      "type": "integer",
+                      "description": "Total number of results returned across all indexes."
+                    },
+                    "results": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "content": {
+                            "type": "string",
+                            "description": "The matched content text."
+                          },
+                          "source": {
+                            "type": "string",
+                            "description": "The source URL for citation."
+                          },
+                          "title": {
+                            "type": "string",
+                            "description": "The page title of the source."
+                          },
+                          "index_name": {
+                            "type": "string",
+                            "description": "The index this result came from."
+                          },
+                          "score": {
+                            "type": "number",
+                            "description": "The semantic relevance score."
+                          }
+                        }
+                      }
+                    },
+                    "errors": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "index_name": {
+                            "type": "string"
+                          },
+                          "error": {
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "description": "Any per-index errors encountered during search."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request - missing query or misconfigured environment.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Error message describing what went wrong."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
