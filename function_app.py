@@ -69,7 +69,7 @@ def search_site(req: func.HttpRequest) -> func.HttpResponse:
         )
 
 
-@app.route(route="search_indexes", methods=["POST"])
+@app.route(route="search_indexes", methods=["POST"], auth_level=func.AuthLevel.FUNCTION)
 def search_indexes(req: func.HttpRequest) -> func.HttpResponse:
     logging.info("search_indexes function processed a request.")
 
