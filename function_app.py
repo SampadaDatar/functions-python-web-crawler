@@ -122,12 +122,11 @@ def search_indexes(req: func.HttpRequest) -> func.HttpResponse:
                 search_text=query,
                 query_type="semantic",
                 semantic_configuration_name=semantic_config,
-                select=["content", "url", "title"],
                 top=top,
             )
             for result in results:
                 all_results.append({
-                    "content": result.get("content", ""),
+                    "content": result.get("content") or result.get("chunk", ""),
                     "source": result.get("url", ""),
                     "title": result.get("title", ""),
                     "index_name": index_name,
