@@ -29,6 +29,32 @@ REQUEST_HEADERS = {
 }
 
 
+def parse_semantic_config(raw):
+    """Parse the SEARCH_SEMANTIC_CONFIG env var into an index -> config mapping.
+
+    Supports two formats:
+    - A single config name applied to every index, e.g. "default".
+    - Per-index mappings, e.g. "index1=config1,index2=config2". A "*" key
+      (e.g. "*=fallback") sets the fallback used for any unlisted index.
+    """
+    mapping = {}
+    if not raw:
+        return mapping
+    if "=" not in raw:
+        # Single config name applies to all indexes.
+        mapping["*"] = raw.strip()
+        return mapping
+    for pair in raw.split(","):
+        if not pair.strip():
+            continue
+        index_name, _, config_name = pair.partition("=")
+        index_name = index_name.strip()
+        config_name = config_name.strip()
+        if index_name and config_name:
+            mapping[index_name] = config_name
+    return mapping
+
+
 @app.route(route="search_site", methods=["POST"])
 def search_site(req: func.HttpRequest) -> func.HttpResponse:
     logging.info('Python HTTP trigger function processed a request.')
@@ -77,7 +103,8 @@ def search_indexes(req: func.HttpRequest) -> func.HttpResponse:
     search_endpoint = os.environ.get("SEARCH_ENDPOINT")
     search_api_key = os.environ.get("SEARCH_API_KEY")
     index_names_raw = os.environ.get("SEARCH_INDEX_NAMES")
-    semantic_config = os.environ.get("SEARCH_SEMANTIC_CONFIG", "default")
+    semantic_config_raw = os.environ.get("SEARCH_SEMANTIC_CONFIG", "default")
+    semantic_config_map = parse_semantic_config(semantic_config_raw)
 
     if not search_endpoint or not search_api_key or not index_names_raw:
         return func.HttpResponse(
@@ -118,6 +145,7 @@ def search_indexes(req: func.HttpRequest) -> func.HttpResponse:
                 index_name=index_name,
                 credential=credential,
             )
+            semantic_config = semantic_config_map.get(index_name, semantic_config_map.get("*", "default"))
             results = search_client.search(
                 search_text=query,
                 query_type="semantic",
