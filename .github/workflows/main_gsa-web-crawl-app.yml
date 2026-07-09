@@ -82,4 +82,4 @@ jobs:
           app-name: 'GSA-web-crawl-app'
           slot-name: 'Production'
           package: ${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}
-          
+          remote-build: true
