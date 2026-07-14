@@ -5,11 +5,14 @@ import logging
 import os
 import re
 import requests
+import time
 import traceback
 import validators
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from urllib.parse import urlparse, urlunparse
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 from azure.identity import DefaultAzureCredential, ManagedIdentityCredential
 from azure.search.documents import SearchClient
@@ -22,11 +25,27 @@ app = func.FunctionApp(http_auth_level=func.AuthLevel.ANONYMOUS)
 CHUNK_SIZE = 2000  # characters per chunk, tuned for AI Search
 DEFAULT_MAX_PAGES = int(os.environ.get("CRAWL_MAX_PAGES", "100"))
 CRAWL_NESTED_SITEMAPS = os.environ.get("CRAWL_NESTED_SITEMAPS", "false").lower() == "true"
+REQUEST_DELAY = float(os.environ.get("REQUEST_DELAY_SECONDS", "2"))  # Delay between requests in seconds
 REQUEST_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     "Accept-Language": "en-US,en;q=0.9",
 }
+
+
+def get_session_with_retries():
+    """Create a requests session with automatic retry logic for rate limiting."""
+    session = requests.Session()
+    retry_strategy = Retry(
+        total=3,
+        status_forcelist=[429, 500, 502, 503, 504],
+        method_whitelist=["HEAD", "GET", "OPTIONS"],
+        backoff_factor=2  # Exponential backoff: 2s, 4s, 8s
+    )
+    adapter = HTTPAdapter(max_retries=retry_strategy)
+    session.mount("http://", adapter)
+    session.mount("https://", adapter)
+    return session
 
 
 def parse_semantic_config(raw):
@@ -241,7 +260,8 @@ def fetch_sitemap(url):
     sitemap_url = _build_sitemap_url(url)
     logging.info(f"Fetching sitemap from: {sitemap_url}")
 
-    response = requests.get(sitemap_url, headers=REQUEST_HEADERS, allow_redirects=True, timeout=15)
+    session = get_session_with_retries()
+    response = session.get(sitemap_url, headers=REQUEST_HEADERS, allow_redirects=True, timeout=15)
     response.raise_for_status()
 
     root = ET.fromstring(response.content)
@@ -307,8 +327,13 @@ def crawl_sitemap(domain_url, max_pages=None):
 
     results = []
     errors = []
-    for page_url in page_urls:
+    for i, page_url in enumerate(page_urls):
         try:
+            # Add delay before each request (except the first one)
+            if i > 0:
+                logging.info(f"Waiting {REQUEST_DELAY} seconds before next request...")
+                time.sleep(REQUEST_DELAY)
+            
             result = orchestrator_function(page_url)
             if "error" in result:
                 errors.append({"url": page_url, "error": result["error"]})
@@ -330,7 +355,9 @@ def crawl_sitemap(domain_url, max_pages=None):
 
 
 def crawl_site(url):
-    response = requests.get(url, headers=REQUEST_HEADERS, allow_redirects=True, timeout=15)
+    """Crawl a single website URL with automatic retry logic."""
+    session = get_session_with_retries()
+    response = session.get(url, headers=REQUEST_HEADERS, allow_redirects=True, timeout=15)
     response.raise_for_status()
     return BeautifulSoup(response.text, "lxml")
 
