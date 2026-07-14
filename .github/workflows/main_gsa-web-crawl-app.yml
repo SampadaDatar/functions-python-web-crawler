@@ -2,7 +2,7 @@
 # More GitHub Actions for Azure: https://github.com/Azure/actions
 # More info on Python, GitHub Actions, and Azure Functions: https://aka.ms/python-webapps-actions
 
-name: Build and deploy Python project to Azure Function App - EBCChatbotWebCrawler
+name: Build and deploy Python project to Azure Function App - GSA-web-crawl-app
 
 on:
   push:
@@ -71,16 +71,15 @@ jobs:
       - name: Login to Azure
         uses: azure/login@v2
         with:
-          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_DAB351098B5942F2A6A9FDDFE59180DD }}
-          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_9455194465834DB685AB3754EACCF677 }}
-          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_6C6F3D1B78E24440A6908A570AFE9354 }}
+          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_85E4CADBD9D745E199FCD863E6316BE9 }}
+          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_E73AEF6276ED433A81D3BCEC54B61EE5 }}
+          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_6167A3D37AF843B7875181FDED26B96D }}
 
       - name: 'Deploy to Azure Functions'
         uses: Azure/functions-action@v1
         id: deploy-to-function
         with:
-          app-name: 'EBCChatbotWebCrawler'
+          app-name: 'GSA-web-crawl-app'
           slot-name: 'Production'
           package: ${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}
           remote-build: true
-          
