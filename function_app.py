@@ -13,7 +13,6 @@ from urllib.parse import urljoin, urlparse, urlunparse
 
 from azure.identity import DefaultAzureCredential, ManagedIdentityCredential
 from azure.search.documents import SearchClient
-from azure.core.credentials import AzureKeyCredential
 from azure.storage.blob import BlobServiceClient
 from bs4 import BeautifulSoup
 
@@ -101,14 +100,13 @@ def search_indexes(req: func.HttpRequest) -> func.HttpResponse:
 
     # Validate environment configuration
     search_endpoint = os.environ.get("SEARCH_ENDPOINT")
-    search_api_key = os.environ.get("SEARCH_API_KEY")
     index_names_raw = os.environ.get("SEARCH_INDEX_NAMES")
     semantic_config_raw = os.environ.get("SEARCH_SEMANTIC_CONFIG", "default")
     semantic_config_map = parse_semantic_config(semantic_config_raw)
 
-    if not search_endpoint or not search_api_key or not index_names_raw:
+    if not search_endpoint or not index_names_raw:
         return func.HttpResponse(
-            json.dumps({"error": "Missing required environment variables: SEARCH_ENDPOINT, SEARCH_API_KEY, SEARCH_INDEX_NAMES"}),
+            json.dumps({"error": "Missing required environment variables: SEARCH_ENDPOINT, SEARCH_INDEX_NAMES"}),
             status_code=400,
             mimetype="application/json"
         )
@@ -134,7 +132,12 @@ def search_indexes(req: func.HttpRequest) -> func.HttpResponse:
     top = req_body.get("top", 5)
     index_names = [name.strip() for name in index_names_raw.split(",") if name.strip()]
 
-    credential = AzureKeyCredential(search_api_key)
+    client_id = os.environ.get("MANAGED_IDENTITY_CLIENT_ID")
+    if client_id:
+        credential = ManagedIdentityCredential(client_id=client_id)
+    else:
+        credential = DefaultAzureCredential()
+
     all_results = []
     errors = []
 

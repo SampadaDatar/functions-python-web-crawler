@@ -102,6 +102,19 @@ Azure Testing:
     2.  https://www.pluralsight.com/
     3.  https://www.linkedin.com/
 
+### Azure AI Search authentication
+
+The `search_indexes` function authenticates to Azure AI Search with Microsoft Entra ID instead of an API key. Configure these Function App settings:
+
+- `SEARCH_ENDPOINT`: The search service endpoint, such as `https://<service-name>.search.windows.net`.
+- `SEARCH_INDEX_NAMES`: A comma-separated list of indexes to query.
+- `SEARCH_SEMANTIC_CONFIG`: The semantic configuration name, or comma-separated per-index mappings.
+- `MANAGED_IDENTITY_CLIENT_ID`: The client ID of the user-assigned managed identity. The same setting is used for Blob Storage authentication.
+
+Attach the user-assigned managed identity to the Function App, then grant it the **Search Index Data Reader** role on the Azure AI Search service. This is the least-privilege role required to query index documents, including semantic queries. The **Search Service Contributor** and **Search Index Data Contributor** roles are not required unless the application also manages indexes or writes documents.
+
+For local development, omit `MANAGED_IDENTITY_CLIENT_ID` to use `DefaultAzureCredential` with your Azure CLI or VS Code sign-in. Grant that developer identity the same **Search Index Data Reader** role. Azure AI Search must allow role-based access control; API-key-only authentication is not sufficient.
+
 
 ## Resources
 
