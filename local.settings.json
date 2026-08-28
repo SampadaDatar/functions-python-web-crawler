@@ -10,7 +10,6 @@
     "CRAWL_MAX_PAGES": "100",
     "CRAWL_NESTED_SITEMAPS": "false",
     "SEARCH_ENDPOINT": "https://<your-search-service-name>.search.windows.net",
-    "SEARCH_API_KEY": "<your-search-api-key>",
     "SEARCH_INDEX_NAMES": "index1,index2",
     "SEARCH_SEMANTIC_CONFIG": "default"
   }
